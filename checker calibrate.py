@@ -1,9 +1,29 @@
 import cv2
 import numpy as np
+import threading
 
 
-stream_commad =  "udp://10.42.0.1:5000?overrun_nonfatal=1&fifo_size=50000000"
-cap = cv2.VideoCapture(stream_commad)
+def _reader():
+    while True:
+        with lock:
+            ret = cap.grab()
+        if not ret:
+            break
+
+# retrieve latest frame
+def read():
+    with lock:
+        _, frame = cap.retrieve()
+    return frame
+
+stream_command = 'udp://0.0.0.0:10000?overrun_nonfatal=1&fifo_size=50000000'
+cap = cv2.VideoCapture(stream_command)
+# cap.set(cv2.CAP_PROP_BUFFERSIZE, 0)
+
+lock = threading.Lock()
+t = threading.Thread(target=_reader)
+t.daemon = True
+t.start()
 
 def live_calibrate(camera, pattern_shape, n_matches_needed):
     """ Find calibration parameters as the user moves a checkerboard in front of the camera """
@@ -14,24 +34,25 @@ def live_calibrate(camera, pattern_shape, n_matches_needed):
     points_3d = []
     points_2d = []
     while len(points_3d) < n_matches_needed:
-        ret, frame = camera.read()
+        ret = True
+        frame = read()
         assert ret
         gray_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        ret, corners = cv2.findCirclesGrid(
-            gray_frame, pattern_shape, flags=cv2.CALIB_CB_ASYMMETRIC_GRID
-        )
+        ret, corners = cv2.findChessboardCorners(
+            gray_frame, pattern_shape)
         cv2.imshow("camera", frame)
+        cv2.waitKey(500)
+
         if ret:
             points_3d.append(example_3d.copy())
             points_2d.append(corners)
             print("Found calibration %i of %i" % (len(points_3d), n_matches_needed))
             drawn_frame = cv2.drawChessboardCorners(frame, pattern_shape, corners, ret)
             cv2.imshow("calib", drawn_frame)
-        cv2.waitKey(10)
     ret, camera_matrix, distortion_coefficients, _, _ = cv2.calibrateCamera(
         points_3d, points_2d, gray_frame.shape[::-1], None, None
     )
     assert ret
     return camera_matrix, distortion_coefficients 
 
-print(live_calibrate(cap,[50, 50], 10))
+print(live_calibrate(cap,[10, 7], 20))
