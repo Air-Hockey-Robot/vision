@@ -40,8 +40,8 @@ def live_calibrate(camera, pattern_shape, n_matches_needed):
         gray_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         ret, corners = cv2.findChessboardCorners(
             gray_frame, pattern_shape)
-        # cv2.imshow("camera", frame)
-        # cv2.waitKey()
+        cv2.imshow("camera", frame)
+        cv2.waitKey(1)
 
         if ret:
             points_3d.append(example_3d.copy())
