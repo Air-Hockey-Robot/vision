@@ -40,8 +40,8 @@ def live_calibrate(camera, pattern_shape, n_matches_needed):
         gray_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         ret, corners = cv2.findChessboardCorners(
             gray_frame, pattern_shape)
-        cv2.imshow("camera", frame)
-        cv2.waitKey(500)
+        # cv2.imshow("camera", frame)
+        # cv2.waitKey()
 
         if ret:
             points_3d.append(example_3d.copy())
@@ -49,10 +49,12 @@ def live_calibrate(camera, pattern_shape, n_matches_needed):
             print("Found calibration %i of %i" % (len(points_3d), n_matches_needed))
             drawn_frame = cv2.drawChessboardCorners(frame, pattern_shape, corners, ret)
             cv2.imshow("calib", drawn_frame)
+            print('ready for image')
+            cv2.waitKey()
     ret, camera_matrix, distortion_coefficients, _, _ = cv2.calibrateCamera(
         points_3d, points_2d, gray_frame.shape[::-1], None, None
     )
     assert ret
     return camera_matrix, distortion_coefficients 
 
-print(live_calibrate(cap,[10, 7], 20))
+print(live_calibrate(cap,(10, 7), 20))
