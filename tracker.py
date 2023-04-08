@@ -4,6 +4,7 @@ import os
 import cv2
 import serial
 import sys
+from datetime import datetime
 
 
 class PuckTracker():
@@ -47,6 +48,8 @@ class PuckTracker():
 
         self._create_blob_detector()
         self._establish_serial()
+        self._create_logger()
+        # self.start_motion()
 
 
     def _create_blob_detector(self):
@@ -80,11 +83,29 @@ class PuckTracker():
     def _establish_serial(self):
         self.serial = serial.Serial(self.com_port, 460800)
 
+    
+    def _create_logger(self):
+        file_name = self.dir_path + '/data/' + datetime.now().strftime("%Y%m%d_%H%M%S.csv")
+        self.logger = open(file_name, "w")
+        self.logger.write("BEGIN CSV\n")
+
+
+    def start_motion(self):
+        self.serial.write('s\n'.encode())
+
 
     def send_to_bluepill(self):
-        msg = f"t (s): {self.frame_time}, puck pos (cm): [{self.puck_pos[0]},{self.puck_pos[1]}],puck vel (cm/s): [{self.puck_vel[0]},{self.puck_vel[1]}]\n"
+        msg = f"{self.frame_time},{self.puck_pos[0]},{self.puck_pos[1]},{self.puck_vel[0]},{self.puck_vel[1]}\n"
+        print('Writing to Blue Pill')
         self.serial.write(msg.encode())
-        print(self.serial.read_until(b'\n'))
+
+    
+    def read_from_bluepill(self):
+        print('Reading from Blue Pill')
+        data = self.serial.readline()
+        data = data[:-1]
+        # print('Writing to file')
+        self.logger.write(data.decode())
 
 
     def update_puck_status(self):
@@ -103,7 +124,7 @@ class PuckTracker():
             x = keypoints[0].pt[0]
             y = keypoints[0].pt[1]
             im_with_keypoints = cv2.drawKeypoints(self.frame, keypoints, np.array([]), (0,0,255), cv2.DRAW_MATCHES_FLAGS_DRAW_RICH_KEYPOINTS)
-            cv2.imshow("Keypoints", im_with_keypoints)
+            # cv2.imshow("Keypoints", im_with_keypoints)
 
             if x > -1 and y > -1 and self.puck_pos[0] > -1 and self.puck_pos[1] > -1:
                 vx = (x - self.puck_pos[0]) / (self.frame_time - self.last_frame_time)
@@ -120,16 +141,17 @@ class PuckTracker():
             self.puck_pos = [-100, -100]
             self.puck_vel = [0, 0]
         
-        cv2.imshow('Frame',self.frame)
-        cv2.waitKey(1)
+        # cv2.imshow('Frame',self.frame)
+        # cv2.waitKey(1)
 
         self.last_frame_time = self.frame_time
-        print(f"{self.puck_vel[0]}\t{self.puck_vel[1]}")
+        print(f"{self.puck_pos[0]}\t{self.puck_pos[1]}")
         self.send_to_bluepill()
-
-
-    def filter_for_puck_bgr(self):
-        cv2.inRange(self.frame,self.lower_bgr_bound,self.upper_bgr_bound)
+        # self.read_from_bluepill()
+    
+    def destroy(self):
+        self.vid.release()
+        self.serial.close()
 
 
 if __name__ == '__main__':
@@ -143,5 +165,5 @@ if __name__ == '__main__':
         while(True):
             puck_tracker.update_puck_status()
     except KeyboardInterrupt:
-        puck_tracker.vid.release()
+        puck_tracker.destroy()
 
