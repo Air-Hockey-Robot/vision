@@ -1,23 +1,22 @@
 import time
 import numpy as np
-import pickle
 import os
-from scipy.signal import savgol_filter
 import cv2
-import socket
-import csv
+import serial
+import sys
 
 
 class PuckTracker():
-    def __init__(self):
+    def __init__(self, com_port="COM9"):
         self.start_time = time.time()
-        self.dir_path = os.path.dirname(os.path.realpath(__file__))  # directory of this python file
+        self.dir_path = os.path.dirname(os.path.realpath(__file__))
+        self.com_port = com_port
         
         self.puck_pos = [-100, -100]
         self.puck_vel = [0.0, 0.0]
         
         # Make the image 200x400, two pixels per cm
-        self.des_image_shape = [200, 400]
+        self.des_image_shape = (200, 400)
         self.pixels_to_cm = 0.5
         # Use get_corners.py to get from_corners
         self.from_corners = [[11,71],[604,57],[633,332],[13,368]]
@@ -29,7 +28,6 @@ class PuckTracker():
         self.vid = cv2.VideoCapture('udp://0.0.0.0:10000?overrun_nonfatal=1&fifo_size=5000000')
         print('Connected to Pi')
         self.vid.set(cv2.CAP_PROP_FOURCC,cv2.VideoWriter_fourcc('H','2','6','4'))
-        self.vid.set(cv2.CAP_PROP_BUFFERSIZE, 1)
 
         self.frame = self.vid.read()[1]
         self.w = self.frame.shape[0]
@@ -47,10 +45,8 @@ class PuckTracker():
 
         self.optimalcameramtx, roi = cv2.getOptimalNewCameraMatrix(self.camera_matrix, self.distortion_coeffs, (self.w,self.h), 0, (self.w,self.h))
 
-        self.found = 0
-        self.tick_tocks = []
-
         self._create_blob_detector()
+        self._establish_serial()
 
 
     def _create_blob_detector(self):
@@ -81,13 +77,19 @@ class PuckTracker():
         self.detector = cv2.SimpleBlobDetector_create(params)
 
 
-    def publish_callback(self):
-        print(self.puck_pos)
+    def _establish_serial(self):
+        self.serial = serial.Serial(self.com_port, 460800)
+
+
+    def send_to_bluepill(self):
+        msg = f"t (s): {self.frame_time}, puck pos (cm): [{self.puck_pos[0]},{self.puck_pos[1]}],puck vel (cm/s): [{self.puck_vel[0]},{self.puck_vel[1]}]\n"
+        self.serial.write(msg.encode())
+        print(self.serial.read_until(b'\n'))
 
 
     def update_puck_status(self):
         frame = self.vid.read()[1]
-        time_stamp = time.time()
+        self.frame_time = time.time()
 
         self.frame = cv2.undistort(frame, self.camera_matrix, self.distortion_coeffs, None, self.optimalcameramtx)
         # cv2.imshow('Distortion Corrected',self.frame)
@@ -104,8 +106,8 @@ class PuckTracker():
             cv2.imshow("Keypoints", im_with_keypoints)
 
             if x > -1 and y > -1 and self.puck_pos[0] > -1 and self.puck_pos[1] > -1:
-                vx = (x - self.puck_pos[0]) / (time_stamp - self.last_frame_time)
-                vy = (y - self.puck_pos[1]) / (time_stamp - self.last_frame_time)
+                vx = (x - self.puck_pos[0]) / (self.frame_time - self.last_frame_time)
+                vy = (y - self.puck_pos[1]) / (self.frame_time - self.last_frame_time)
 
                 epsilon = 0.6 #higher is mostly current [0; 1]
                 self.puck_vel[0] = (1-epsilon)*self.puck_vel[0] + epsilon*vx
@@ -121,25 +123,25 @@ class PuckTracker():
         cv2.imshow('Frame',self.frame)
         cv2.waitKey(1)
 
-        self.last_frame_time = time_stamp
-        print(self.puck_vel)
+        self.last_frame_time = self.frame_time
+        print(f"{self.puck_vel[0]}\t{self.puck_vel[1]}")
+        self.send_to_bluepill()
 
 
     def filter_for_puck_bgr(self):
         cv2.inRange(self.frame,self.lower_bgr_bound,self.upper_bgr_bound)
 
 
-def main():
-    puck_tracker = PuckTracker()
+if __name__ == '__main__':
+    if len(sys.argv) > 1:
+        com_port = sys.argv[1]    
+        puck_tracker = PuckTracker(com_port)
+    else:
+        puck_tracker = PuckTracker()
 
     try:
         while(True):
             puck_tracker.update_puck_status()
     except KeyboardInterrupt:
         puck_tracker.vid.release()
-        
-# f = open('data/data.csv', 'w', newline='')
-# writer = csv.writer(f)
 
-if __name__ == '__main__':
-    main()
