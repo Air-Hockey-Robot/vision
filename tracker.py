@@ -95,17 +95,18 @@ class PuckTracker():
 
 
     def send_to_bluepill(self):
-        msg = f"{self.frame_time},{self.puck_pos[0]},{self.puck_pos[1]},{self.puck_vel[0]},{self.puck_vel[1]}\n"
-        print('Writing to Blue Pill')
+        msg = f"{round(self.frame_time,4)} {round(self.puck_pos[0],4)} {round(self.puck_pos[1],4)} {round(self.puck_vel[0],4)} {round(self.puck_vel[1],4)}\n"
+        # print('Writing to Blue Pill')
         self.serial.write(msg.encode())
 
     
     def read_from_bluepill(self):
         print('Reading from Blue Pill')
-        data = self.serial.readline()
-        data = data[:-1]
+        data = self.serial.readline().decode('latin-1')
+        data = data[:-2] + '\n'
+        print(data)
         # print('Writing to file')
-        self.logger.write(data.decode())
+        self.logger.write(data)
 
 
     def update_puck_status(self):
@@ -124,7 +125,7 @@ class PuckTracker():
             x = keypoints[0].pt[0]
             y = keypoints[0].pt[1]
             im_with_keypoints = cv2.drawKeypoints(self.frame, keypoints, np.array([]), (0,0,255), cv2.DRAW_MATCHES_FLAGS_DRAW_RICH_KEYPOINTS)
-            # cv2.imshow("Keypoints", im_with_keypoints)
+            cv2.imshow("Keypoints", im_with_keypoints)
 
             if x > -1 and y > -1 and self.puck_pos[0] > -1 and self.puck_pos[1] > -1:
                 vx = (x - self.puck_pos[0]) / (self.frame_time - self.last_frame_time)
@@ -136,18 +137,20 @@ class PuckTracker():
             else:
                 self.puck_vel = [0, 0]
 
-            self.puck_pos = keypoints[0].pt
+            self.puck_pos[0] = keypoints[0].pt[0] / 200
+            self.puck_pos[1] = 2 - keypoints[0].pt[1] / 200
+
         else:
             self.puck_pos = [-100, -100]
             self.puck_vel = [0, 0]
         
-        # cv2.imshow('Frame',self.frame)
-        # cv2.waitKey(1)
+        cv2.imshow('Frame',self.frame)
+        cv2.waitKey(1)
 
         self.last_frame_time = self.frame_time
         print(f"{self.puck_pos[0]}\t{self.puck_pos[1]}")
         self.send_to_bluepill()
-        # self.read_from_bluepill()
+        self.read_from_bluepill()
     
     def destroy(self):
         self.vid.release()
