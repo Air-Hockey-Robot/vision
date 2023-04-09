@@ -12,6 +12,15 @@ class PuckTracker():
         self.start_time = time.time()
         self.dir_path = os.path.dirname(os.path.realpath(__file__))
         self.com_port = com_port
+
+        self._create_blob_detector()
+        self._establish_serial()
+        self._create_logger()
+
+        self.XMIN = 0.1
+        self.XMAX = 0.9
+        self.YMIN = 0.1
+        self.YMAX = 0.9 
         
         self.puck_pos = [-100, -100]
         self.puck_vel = [0.0, 0.0]
@@ -46,9 +55,6 @@ class PuckTracker():
 
         self.optimalcameramtx, roi = cv2.getOptimalNewCameraMatrix(self.camera_matrix, self.distortion_coeffs, (self.w,self.h), 0, (self.w,self.h))
 
-        self._create_blob_detector()
-        self._establish_serial()
-        self._create_logger()
         # self.start_motion()
 
 
@@ -81,13 +87,13 @@ class PuckTracker():
 
 
     def _establish_serial(self):
-        self.serial = serial.Serial(self.com_port, 460800)
+        self.serial = serial.Serial(self.com_port, 460800, timeout=1)
 
     
     def _create_logger(self):
         file_name = self.dir_path + '/data/' + datetime.now().strftime("%Y%m%d_%H%M%S.csv")
         self.logger = open(file_name, "w")
-        self.logger.write("BEGIN CSV\n")
+        # self.logger.write("BEGIN CSV\n")
 
 
     def start_motion(self):
@@ -102,12 +108,25 @@ class PuckTracker():
     
     def read_from_bluepill(self):
         print('Reading from Blue Pill')
-        data = self.serial.readline().decode('latin-1')
-        data = data[:-2] + '\n'
-        print(data)
-        # print('Writing to file')
-        self.logger.write(data)
+        data = self.serial.readline()
+        try:
+            data = data[:-2].decode() + '\n'
+            print(data)
+            self.logger.write(data)
+        except Exception as e:
+            print(e)
+            print('Could not decode data: ', data)
+            return
+        
+        if data == "Finished executing\n":
+            self.logger.close()
+            exit(0)
 
+    
+    def should_send_msg(self):
+        '''Decide whether to send a command to the Blue Pill'''
+        return self.puck_pos[0] >= self.XMIN and self.puck_pos[0] <= self.XMAX \
+            and self.puck_pos[1] >= self.YMIN and self.puck_pos[1] <= self.YMAX
 
     def update_puck_status(self):
         frame = self.vid.read()[1]
@@ -148,13 +167,18 @@ class PuckTracker():
         cv2.waitKey(1)
 
         self.last_frame_time = self.frame_time
+        
         print(f"{self.puck_pos[0]}\t{self.puck_pos[1]}")
-        self.send_to_bluepill()
+        
+        if self.should_send_msg():
+            self.send_to_bluepill()
+        
         self.read_from_bluepill()
     
     def destroy(self):
         self.vid.release()
         self.serial.close()
+        self.logger.close()
 
 
 if __name__ == '__main__':
