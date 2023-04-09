@@ -20,7 +20,7 @@ class PuckTracker():
         self.XMIN = 0.1
         self.XMAX = 0.9
         self.YMIN = 0.1
-        self.YMAX = 0.9 
+        self.YMAX = 1.9 
         
         self.puck_pos = [-100, -100]
         self.puck_vel = [0.0, 0.0]
@@ -36,6 +36,9 @@ class PuckTracker():
 
         print('Run the bash script on the Pi now')
         self.vid = cv2.VideoCapture('udp://0.0.0.0:10000?overrun_nonfatal=1&fifo_size=5000000')
+        # print("about to readall")
+        self.serial.read_all()
+        self.serial.read_until("\n")
         print('Connected to Pi')
         self.vid.set(cv2.CAP_PROP_FOURCC,cv2.VideoWriter_fourcc('H','2','6','4'))
 
@@ -87,7 +90,8 @@ class PuckTracker():
 
 
     def _establish_serial(self):
-        self.serial = serial.Serial(self.com_port, 460800, timeout=1)
+        self.serial = serial.Serial(self.com_port, 460800, timeout=0.01)
+        self.serial.read_all()
 
     
     def _create_logger(self):
@@ -101,18 +105,19 @@ class PuckTracker():
 
 
     def send_to_bluepill(self):
-        msg = f"{round(self.frame_time,4)} {round(self.puck_pos[0],4)} {round(self.puck_pos[1],4)} {round(self.puck_vel[0],4)} {round(self.puck_vel[1],4)}\n"
-        # print('Writing to Blue Pill')
+        msg = f"{round(self.frame_time,4)},{round(self.puck_pos[0],4)},{round(self.puck_pos[1],4)},{round(self.puck_vel[0],4)},{round(self.puck_vel[1],4)}\n"
+        print('Writing to Blue Pill')
         self.serial.write(msg.encode())
 
     
     def read_from_bluepill(self):
         print('Reading from Blue Pill')
-        data = self.serial.readline()
+        data = self.serial.read_all()
         try:
-            data = data[:-2].decode() + '\n'
-            print(data)
-            self.logger.write(data)
+            data = data.decode().replace('\r\n','\n')
+            # print(data)
+            if len(data):
+                self.logger.write(data)
         except Exception as e:
             print(e)
             print('Could not decode data: ', data)
@@ -130,7 +135,7 @@ class PuckTracker():
 
     def update_puck_status(self):
         frame = self.vid.read()[1]
-        self.frame_time = time.time()
+        self.frame_time = 1000* (time.time() - self.start_time)
 
         self.frame = cv2.undistort(frame, self.camera_matrix, self.distortion_coeffs, None, self.optimalcameramtx)
         # cv2.imshow('Distortion Corrected',self.frame)
@@ -143,8 +148,8 @@ class PuckTracker():
         if len(keypoints):
             x = keypoints[0].pt[0]
             y = keypoints[0].pt[1]
-            im_with_keypoints = cv2.drawKeypoints(self.frame, keypoints, np.array([]), (0,0,255), cv2.DRAW_MATCHES_FLAGS_DRAW_RICH_KEYPOINTS)
-            cv2.imshow("Keypoints", im_with_keypoints)
+            # im_with_keypoints = cv2.drawKeypoints(self.frame, keypoints, np.array([]), (0,0,255), cv2.DRAW_MATCHES_FLAGS_DRAW_RICH_KEYPOINTS)
+            # cv2.imshow("Keypoints", im_with_keypoints)
 
             if x > -1 and y > -1 and self.puck_pos[0] > -1 and self.puck_pos[1] > -1:
                 vx = (x - self.puck_pos[0]) / (self.frame_time - self.last_frame_time)
@@ -163,10 +168,8 @@ class PuckTracker():
             self.puck_pos = [-100, -100]
             self.puck_vel = [0, 0]
         
-        cv2.imshow('Frame',self.frame)
-        cv2.waitKey(1)
-
-        self.last_frame_time = self.frame_time
+        # cv2.imshow('Frame',self.frame)
+        # cv2.waitKey(1)
         
         print(f"{self.puck_pos[0]}\t{self.puck_pos[1]}")
         
@@ -174,11 +177,13 @@ class PuckTracker():
             self.send_to_bluepill()
         
         self.read_from_bluepill()
+        self.last_frame_time = self.frame_time
     
     def destroy(self):
         self.vid.release()
-        self.serial.close()
+        self.read_from_bluepill()
         self.logger.close()
+        self.serial.close()
 
 
 if __name__ == '__main__':
